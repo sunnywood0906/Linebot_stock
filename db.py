@@ -9,6 +9,7 @@ DB_URL = os.getenv("DATABASE_URL")
 
 # 建立連線
 def get_conn():
+    print("目前讀到的 DATABASE_URL：", os.getenv("DATABASE_URL"))
     return psycopg2.connect(DB_URL, cursor_factory=RealDictCursor)
 
 # 新增使用者（如果不存在）
