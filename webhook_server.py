@@ -1,8 +1,15 @@
 from flask import Flask, request
 import os
-from dotenv import load_dotenv
-import csv
 import requests
+import re 
+from dotenv import load_dotenv
+from db import (
+    add_tracked_stock,
+    remove_tracked_stock,
+    list_tracked_stocks,
+    update_notify_time,
+    get_notify_time,
+)
 
 app = Flask(__name__)
 load_dotenv()
@@ -16,64 +23,50 @@ def webhook():
 
     for event in events:
         if event["type"] == "message" and event["message"]["type"] == "text":
-            user_id = event["source"]["userId"]
+            line_user_id = event["source"]["userId"]
             msg = event["message"]["text"].strip()
 
+            # 加入股票追蹤
             if msg.startswith("+"):
                 symbol = msg[1:].strip()
-                if add_stock_to_user_list(user_id, symbol):
-                    reply_text(user_id, f"✅ 已加入追蹤：{symbol}")
-                else:
-                    reply_text(user_id, f"⚠️ {symbol} 已在追蹤清單中")
+                reply = add_tracked_stock(line_user_id, symbol)
+                reply_text(line_user_id, reply)
 
+            # 取消追蹤
             elif msg.startswith("-"):
                 symbol = msg[1:].strip()
-                if remove_stock_from_user_list(user_id, symbol):
-                    reply_text(user_id, f"❌ 已取消追蹤：{symbol}")
-                else:
-                    reply_text(user_id, f"⚠️ 沒有在清單中：{symbol}")
+                reply = remove_tracked_stock(line_user_id, symbol)
+                reply_text(line_user_id, reply)
 
+            # 查看追蹤清單
             elif msg == "/list":
-                stocks = get_user_stock_list(user_id)
+                stocks = list_tracked_stocks(line_user_id)
                 if stocks:
                     text = "📋 目前追蹤清單：\n" + "\n".join(f"- {s}" for s in stocks)
                 else:
                     text = "📭 清單是空的喔，請用 `+股票代碼` 加入追蹤！"
-                reply_text(user_id, text)
+                reply_text(line_user_id, text)
+
+            # ✅ 設定推播時間（含格式驗證）
+            elif msg.startswith("/settime"):
+                try:
+                    time_str = msg.split(" ", 1)[1].strip()
+                    if not re.match(r"^\d{2}:\d{2}$", time_str):
+                        raise ValueError()
+                    update_notify_time(line_user_id, time_str)
+                    reply_text(line_user_id, f"✅ 已設定推播時間為 {time_str}")
+                except:
+                    reply_text(line_user_id, "❌ 格式錯誤，請用 `/settime HH:MM`（例如：08:30）")
+
+            # 查詢目前的推播時間
+            elif msg == "/time":
+                t = get_notify_time(line_user_id)
+                if t:
+                    reply_text(line_user_id, f"⏰ 你目前設定的推播時間是 {t}")
+                else:
+                    reply_text(line_user_id, "你尚未設定推播時間，可以用 `/settime 08:00` 設定喔！")
 
     return "OK", 200
-
-def get_user_stock_list(user_id):
-    path = f"user_data/{user_id}.csv"
-    if not os.path.exists(path):
-        return []
-    with open(path, newline='', encoding="utf-8") as f:
-        return [row[0] for row in csv.reader(f)]
-
-def add_stock_to_user_list(user_id, symbol):
-    path = f"user_data/{user_id}.csv"
-    os.makedirs("user_data", exist_ok=True)
-    stocks = get_user_stock_list(user_id)
-    if symbol in stocks:
-        return False
-    with open(path, "a", newline='', encoding="utf-8") as f:
-        writer = csv.writer(f)
-        writer.writerow([symbol])
-    return True
-
-def remove_stock_from_user_list(user_id, symbol):
-    path = f"user_data/{user_id}.csv"
-    if not os.path.exists(path):
-        return False
-    stocks = get_user_stock_list(user_id)
-    if symbol not in stocks:
-        return False
-    stocks.remove(symbol)
-    with open(path, "w", newline='', encoding="utf-8") as f:
-        writer = csv.writer(f)
-        for s in stocks:
-            writer.writerow([s])
-    return True
 
 def reply_text(user_id, message):
     url = "https://api.line.me/v2/bot/message/push"
@@ -85,7 +78,8 @@ def reply_text(user_id, message):
         "to": user_id,
         "messages": [{"type": "text", "text": message}]
     }
-    requests.post(url, headers=headers, json=data)
+    res = requests.post(url, headers=headers, json=data)
+    print(f"推播狀態：{res.status_code} 回傳內容：{res.text}")
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 10000))
