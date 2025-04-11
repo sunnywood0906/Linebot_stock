@@ -79,7 +79,7 @@ def reply_text(user_id, message):
         "messages": [{"type": "text", "text": message}]
     }
     res = requests.post(url, headers=headers, json=data)
-    print(f"推播狀態：{res.status_code} 回傳內容：{res.text}")
+    print(f"[LINE 推播] 狀態碼：{res.status_code}，回傳內容：{res.text}")
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 10000))
