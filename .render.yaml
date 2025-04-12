@@ -1,0 +1,9 @@
+services:
+  - type: web
+    name: line-notify-stock-tracker
+    env: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn -k uvicorn.workers.UvicornWorker webhook_server:app
+    envVars:
+      - key: PORT
+        value: 10000
